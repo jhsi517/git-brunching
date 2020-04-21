@@ -10,6 +10,114 @@ router.use(bodyParser.urlencoded({ extended: true }));
 /**
  * @swagger
  *
+ * /restaurant/popular:
+ *   get:
+ *     description: Fetch most popular (has most bookings made) restaurant objects from the database
+ *     produces:
+ *       - application/json
+ *     parameters:
+ *       - name: limit
+ *         description: Number of restaurants to retrieve
+ *         in: query
+ *         required: false
+ *         type: string
+ *       - name: offset
+ *         description: Number of restaurants to offset search by
+ *         in: query
+ *         required: false
+ *         type: string
+ *     responses:
+ *       200:
+ *         description: Returns restaurant objects
+ */
+router.get('/popular', (req, res) => {
+  const { limit, offset } = req.query;
+
+  if (limit < 0) {
+    res.status(400).json({ error: 'Limit value must be at least 0 or omitted.' });
+    return;
+  }
+
+  if (offset < 0) {
+    res.status(400).json({ error: 'Offset value must be at least 0 or omitted.' });
+    return;
+  }
+
+  let queryLimit = limit ? parseInt(limit) : 10;
+  let queryOffset = offset ? parseInt(offset) : 0;
+
+  connection.query(
+    'SELECT RESTAURANT.* FROM RESTAURANT LEFT JOIN RESERVATION ON RESTAURANT.ID = RESERVATION.RestaurantID AND '
+      + 'CURDATE() <= DATE_ADD(RESERVATION.Date, INTERVAL 1 MONTH) GROUP BY RESTAURANT.ID '
+      + 'ORDER BY SUM(RESERVATION.NumberOfGuests) DESC, RESTAURANT.Name DESC LIMIT ? OFFSET ?',
+    [queryLimit, queryOffset],
+    (error, results) => {
+      if (error) {
+        res.status(400).json({ error });
+        return;
+      }
+      res.json(results);
+    }
+  );
+});
+
+/**
+ * @swagger
+ *
+ * /restaurant/open:
+ *   get:
+ *     description: Fetch the restaurant objects of restuarants which are open from the database
+ *     produces:
+ *       - application/json
+ *     parameters:
+ *       - name: limit
+ *         description: Number of restaurants to retrieve
+ *         in: query
+ *         required: false
+ *         type: string
+ *       - name: offset
+ *         description: Number of restaurants to offset search by
+ *         in: query
+ *         required: false
+ *         type: string
+ *     responses:
+ *       200:
+ *         description: Returns restaurant objects
+ */
+router.get('/open', (req, res) => {
+  const { limit, offset } = req.query;
+
+  if (limit < 0) {
+    res.status(400).json({ error: 'Limit value must be at least 0 or omitted.' });
+    return;
+  }
+
+  if (offset < 0) {
+    res.status(400).json({ error: 'Offset value must be at least 0 or omitted.' });
+    return;
+  }
+
+  let queryLimit = limit ? parseInt(limit) : 10;
+  let queryOffset = offset ? parseInt(offset) : 0;
+
+  connection.query(
+    'SELECT RESTAURANT.* FROM RESTAURANT INNER JOIN HOURS ON RESTAURANT.ID = HOURS.RestaurantID AND '
+      + 'HOURS.DayOfWeek = LEFT(DAYNAME(CURDATE()), 3) AND CURTIME() BETWEEN HOURS.OpenTime AND '
+      + 'HOURS.CloseTime LIMIT ? OFFSET ?',
+    [queryLimit, queryOffset],
+    (error, results) => {
+      if (error) {
+        res.status(400).json({ error });
+        return;
+      }
+      res.json(results);
+    }
+  );
+});
+
+/**
+ * @swagger
+ *
  * /restaurant/{restaurantID}:
  *   get:
  *     description: Fetch a restaurant object
@@ -219,13 +327,53 @@ router.post('/', (req, res) => {
     return;
   }
 
-  connection.query('INSERT INTO RESTAURANT (`Name`, `OwnerId`) VALUES (?, ?);', [body.name, body.ownerId], error => {
+  var image = body.image ? body.image : null;
+
+  connection.query('INSERT INTO RESTAURANT (`Name`, `OwnerId`, `Image`) VALUES (?, ?, ?);', [body.name, body.ownerId, image], error => {
     if (error) {
       res.status(400).json({ error });
       return;
     }
     res.json('added');
   });
+});
+
+/**
+ * @swagger
+ *
+ * /restaurant/search/{restaurantName}:
+ *   get:
+ *     description: Fetch restaurant objects that contains the search phrase from the database
+ *     produces:
+ *       - application/json
+ *     parameters:
+ *       - name: restaurantName
+ *         description: Phrase used to search in Name field in the database
+ *         in: path
+ *         required: true
+ *         type: string
+ *     responses:
+ *       200:
+ *         description: Returns matching restaurant objects
+ */
+router.get('/search/:restaurantName', async (req, res) => {
+    const { restaurantName } = req.params;
+    if (!restaurantName) {
+        res.status(400).json({ error: 'GET /restaurant/{restaurantName} invocation error: {restaurantName} must be an string' });
+        return;
+    }
+    else {
+        connection.query(
+            'SELECT * FROM RESTAURANT WHERE NAME LIKE ?', '%' + restaurantName + '%',
+            (error, results) => {
+                if (error) {
+                    res.status(400).json({ error });
+                    return;
+                }
+                res.json(results);
+            }
+        );
+    }
 });
 
 /**
